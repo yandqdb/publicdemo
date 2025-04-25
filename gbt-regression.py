@@ -81,6 +81,11 @@ df.printSchema()
 
 # COMMAND ----------
 
+import mlflow
+mlflow.autolog()
+
+# COMMAND ----------
+
 # MAGIC %md #### Split data into training and test sets
 # MAGIC
 # MAGIC Randomly split data into training and test sets. By doing this, you can train and tune the model using only the training subset, and then evaluate the model's performance on the test set to get a sense of how the model will perform on new data. 
@@ -201,12 +206,18 @@ pipelineModel = pipeline.fit(train)
 
 # COMMAND ----------
 
-# Predict and log the eval metric to MLflow
-import mlflow
-import mlflow.spark
 from pyspark.ml.evaluation import RegressionEvaluator
+with mlflow.start_run():
+    pipelineModel=pipeline.fit(train)
+    predictions = pipelineModel.transform(test)
+    evaluator = RegressionEvaluator(labelCol="cnt", predictionCol="prediction", metricName="rmse")
+    rmse = evaluator.evaluate(predictions)
+    mlflow.log_metric("rmse", rmse)
 
-mlflow.autolog()
+# COMMAND ----------
+
+# Predict and log the eval metric to MLflow
+from pyspark.ml.evaluation import RegressionEvaluator
 
 with mlflow.start_run():
     predictions = pipelineModel.transform(test)
