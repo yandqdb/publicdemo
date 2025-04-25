@@ -201,63 +201,19 @@ pipelineModel = pipeline.fit(train)
 
 # COMMAND ----------
 
-# MAGIC %md ## Make predictions and evaluate results
-# MAGIC
-# MAGIC The final step is to use the fitted model to make predictions on the test dataset and evaluate the model's performance. The model's performance on the test dataset provides an approximation of how it is likely to perform on new data. For example, if you had weather predictions for the next week, you could predict bike rentals expected during the next week.
-# MAGIC
-# MAGIC Computing evaluation metrics is important for understanding the quality of predictions, as well as for comparing models and tuning parameters.
+# Predict and log the eval metric to MLflow
+import mlflow
+import mlflow.spark
+from pyspark.ml.evaluation import RegressionEvaluator
 
-# COMMAND ----------
+mlflow.autolog()
 
-# MAGIC %md The `transform()` method of the pipeline model applies the full pipeline to the input dataset. The pipeline applies the feature processing steps to the dataset and then uses the fitted GBT model to make predictions. The pipeline returns a DataFrame with a new column `predictions`.
-
-# COMMAND ----------
-
-predictions = pipelineModel.transform(test)
-
-# COMMAND ----------
-
-display(predictions.select("cnt", "prediction", *featuresCols))
-
-# COMMAND ----------
-
-# MAGIC %md A common way to evaluate the performance of a regression model is the calculate the [root mean squared error (RMSE)](https://spark.apache.org/docs/latest/mllib-evaluation-metrics.html#regression-model-evaluation). The value is not very informative on its own, but you can use it to compare different models. `CrossValidator` determines the best model by selecting the one that minimizes RMSE. 
-
-# COMMAND ----------
-
-rmse = evaluator.evaluate(predictions)
-print("RMSE on our test set: %g" % rmse)
-
-# COMMAND ----------
-
-# MAGIC %md You can also plot the results, as you did the original dataset. In this case, the hourly count of rentals shows a similar shape.
-
-# COMMAND ----------
-
-display(predictions.select("hr", "prediction"))
-
-# COMMAND ----------
-
-# MAGIC %md It's also a good idea to examine the residuals, or the difference between the expected result and the predicted value. The residuals should be randomly distributed; if there are any patterns in the residuals, the model may not be capturing something important. In this case, the average residual is about 1, less than 1% of the average value of the `cnt` column. 
-
-# COMMAND ----------
-
-import pyspark.sql.functions as F
-predictions_with_residuals = predictions.withColumn("residual", (F.col("cnt") - F.col("prediction")))
-display(predictions_with_residuals.agg({'residual': 'mean'}))
-
-# COMMAND ----------
-
-# MAGIC %md Plot the residuals across the hours of the day to look for any patterns. In this example, there are no obvious correlations.
-
-# COMMAND ----------
-
-display(predictions_with_residuals.select("hr", "residual"))
-
-# COMMAND ----------
-
-# MAGIC %md #### Improving the model
-# MAGIC Here are some suggestions for improving this model:
-# MAGIC * The count of rentals is the sum of `registered` and `casual` rentals. These two counts may have different behavior, as frequent cyclists and casual cyclists may rent bikes for different reasons. Try training one GBT model for `registered` and one for `casual`, and then add their predictions together to get the full prediction.
-# MAGIC * For efficiency, this notebook used only a few hyperparameter settings. You might be able to improve the model by testing more settings. A good start is to increase the number of trees by setting `maxIter=200`; this takes longer to train but might more accurate.
-# MAGIC * This notebook used the dataset features as-is, but you might be able to improve performance with some feature engineering. For example, the weather might have more of an impact on the number of rentals on weekends and holidays than on workdays. You could try creating a new feature by combining those two columns.  MLlib provides a suite of feature transformers; find out more in the [ML guide](http://spark.apache.org/docs/latest/ml-features.html).
+with mlflow.start_run():
+    predictions = pipelineModel.transform(test)
+    
+    evaluator = RegressionEvaluator(labelCol="cnt", predictionCol="prediction", metricName="rmse")
+    rmse = evaluator.evaluate(predictions)
+    
+    mlflow.log_metric("rmse", rmse)
+    
+    display(predictions.select("cnt", "prediction", *featuresCols))
